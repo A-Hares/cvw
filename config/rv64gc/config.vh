@@ -57,6 +57,7 @@ localparam BUS_SUPPORTED = 1;
 localparam DCACHE_SUPPORTED = 1;
 localparam ICACHE_SUPPORTED = 1;
 localparam VIRTMEM_SUPPORTED = 1;
+localparam FETCHBUFFER_SUPPORTED = 0;
 localparam VECTORED_INTERRUPTS_SUPPORTED = 1;
 localparam BIGENDIAN_SUPPORTED = 1;
 

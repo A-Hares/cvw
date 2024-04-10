@@ -140,20 +140,44 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
   logic [15:0]                 InstrRawE, InstrRawM;
   logic [LINELEN-1:0]          FetchBuffer;
   logic [31:0]                 ShiftUncachedInstr;
-  
+  logic [P.PA_BITS-1 : 0]      PCPF_muxed;
+  logic [LINELEN-1:0]          ReadDataLineCache;
+  logic [31:0]                 InstrRawSpill;
+
   assign PCFExt = {2'b00, PCSpillF};
 
   /////////////////////////////////////////////////////////////////////////////////////////////
   // Spill Support
   /////////////////////////////////////////////////////////////////////////////////////////////
 
+  if ( ~P.FETCHBUFFER_SUPPORTED) begin
+    flopenl #(32) AlignedInstrRawDFlop(clk, reset | FlushD, ~StallD, PostSpillInstrRawF, nop, InstrRawD);
+    assign PCPF_muxed = PCPF;
+    assign InstrRawSpill = InstrRawF;
+  end
+  else begin
+    logic [LINELEN-1:0]     ReadDataLineOut;
+    logic [P.PA_BITS-1 : 0] PAdr_out;
+    logic                   PAdr_mux;
+    
+    
+    assign InstrRawSpill = InstrD;
+    //mux2 #(LINELEN) linemux(.d0(ReadDataLineCache) , .d1(FetchBuffer), .s(~CacheableF), .y(ReadDataLineOut));
+    mux2 #(P.PA_BITS) PAdrmux(.d0(PCPF) , .d1(PAdr_out), .s(PAdr_mux), .y(PCPF_muxed));
+  
+    FetchBuffer #(.P(P) ,.PA_BITS(P.PA_BITS), .LINELEN(P.ICACHE_LINELENINBITS), .WORDLEN(32), .MUXINTERVAL(16)) FB_inst(
+      .clk , .reset , .ReadDataLine(ReadDataLineCache) , .PAdr(PCPF), .Stall(GatedStallD) , .FlushStage(FlushD) , .PAdr_out , .PAdr_mux , .ReadDataWord(InstrRawD)
+    );
+
+  end
+
   if(P.COMPRESSED_SUPPORTED) begin : Spill
-    spill #(P) spill(.clk, .reset, .StallD, .FlushD, .PCF, .PCPlus4F, .PCNextF, .InstrRawF, .InstrUpdateDAF, .CacheableF, 
+    spill #(P) spill(.clk, .reset, .StallD, .FlushD, .PCF, .PCPlus4F, .PCNextF, .InstrRawF(InstrRawSpill), .InstrUpdateDAF, .CacheableF, 
       .IFUCacheBusStallF, .ITLBMissF, .PCSpillNextF, .PCSpillF, .SelSpillNextF, .PostSpillInstrRawF, .CompressedF);
   end else begin : NoSpill
     assign PCSpillNextF = PCNextF;
     assign PCSpillF = PCF;
-    assign PostSpillInstrRawF = InstrRawF;
+    assign PostSpillInstrRawF = InstrRawSpill;
     assign {SelSpillNextF, CompressedF} = 0;
   end
 
@@ -234,6 +258,7 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
       logic                 ICacheBusAck;
       logic [1:0]           CacheBusRW, BusRW, CacheRWF;
       
+      
       assign BusRW = ~ITLBMissF & ~CacheableF & ~SelIROM ? IFURWF : 0;
       assign CacheRWF = ~ITLBMissF & CacheableF & ~SelIROM ? IFURWF : 0;
       // *** RT: PAdr and NextSet are replaced with mux between PCPF/IEUAdrM and PCSpillNextF/IEUAdrE.
@@ -252,8 +277,9 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
              .CacheRW(CacheRWF),
              .FlushCache('0),
              .NextSet(PCSpillNextF[11:0]),
-             .PAdr(PCPF),
-             .CacheCommitted(CacheCommittedF), .InvalidateCache(InvalidateICacheM), .CMOpM('0)); 
+             .PAdr(PCPF_muxed),
+             .CacheCommitted(CacheCommittedF), .InvalidateCache(InvalidateICacheM), .CMOpM('0),
+             .ReadDataLine(ReadDataLineCache)); 
 
       ahbcacheinterface #(P, WORDSPERLINE, LOGBWPL, LINELEN, LLENPOVERAHBW, 1) 
       ahbcacheinterface(.HCLK(clk), .HRESETn(~reset),
@@ -262,9 +288,10 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
             .Funct3(3'b010), .HADDR(IFUHADDR), .HREADY(IFUHREADY), .HWRITE(IFUHWRITE), .CacheBusAdr(ICacheBusAdr),
             .BeatCount(), .Cacheable(CacheableF), .SelBusBeat(), .WriteDataM('0), .BusAtomic('0),
             .CacheBusAck(ICacheBusAck), .HWDATA(), .CacheableOrFlushCacheM(1'b0), .CacheReadDataWordM('0),
-            .FetchBuffer, .PAdr(PCPF),
+            .FetchBuffer, .PAdr(PCPF_muxed),
             .BusRW, .Stall(GatedStallD),
             .BusStall, .BusCommitted(BusCommittedF));
+
 
       mux3 #(32) UnCachedDataMux(.d0(ICacheInstrF), .d1(ShiftUncachedInstr), .d2(IROMInstrF),
                                  .s({SelIROM, ~CacheableF}), .y(InstrRawF[31:0]));
@@ -300,8 +327,6 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
   assign IFUStallF = IFUCacheBusStallF | SelSpillNextF;
   assign GatedStallD = StallD & ~SelSpillNextF;
   
-  flopenl #(32) AlignedInstrRawDFlop(clk, reset | FlushD, ~StallD, PostSpillInstrRawF, nop, InstrRawD);
-
   ////////////////////////////////////////////////////////////////////////////////////////////////
   // PCNextF logic
   ////////////////////////////////////////////////////////////////////////////////////////////////

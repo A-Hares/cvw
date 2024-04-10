@@ -46,6 +46,7 @@ module cache import cvw::*; #(parameter cvw_t P,
   output logic                   CacheCommitted,    // Cache has started bus operation that shouldn't be interrupted
   output logic                   CacheStall,        // Cache stalls pipeline during multicycle operation
   output logic [WORDLEN-1:0]     ReadDataWord,      // Word read from cache (goes to CPU and bus)
+  output logic [LINELEN-1:0]     ReadDataLine,
   // to performance counters to cpu
   output logic                   CacheMiss,         // Cache miss
   output logic                   CacheAccess,       // Cache access
@@ -95,7 +96,7 @@ module cache import cvw::*; #(parameter cvw_t P,
   logic                          SelWriteback;
   logic                          LRUWriteEn;
   logic                          ResetOrFlushCntRst;
-  logic [LINELEN-1:0]            ReadDataLine, ReadDataLineCache;
+  logic [LINELEN-1:0]            ReadDataLineCache;
   logic                          SelFetchBuffer;
   logic                          CacheEn;
   logic                          SelVictim;
@@ -154,8 +155,9 @@ module cache import cvw::*; #(parameter cvw_t P,
   mux2 #(LINELEN) EarlyReturnMux(ReadDataLineCache, FetchBuffer, SelFetchBuffer, ReadDataLine);
 
   // Select word from cache line
-  subcachelineread #(LINELEN, WORDLEN, MUXINTERVAL) subcachelineread(
-    .PAdr(WordOffsetAddr), .ReadDataLine, .ReadDataWord);
+  //if (READ_ONLY_CACHE & ~P.FETCHBUFFER_SUPPORTED)
+    subcachelineread #(LINELEN, WORDLEN, MUXINTERVAL) subcachelineread(
+      .PAdr(WordOffsetAddr), .ReadDataLine, .ReadDataWord);
   
   // Bus address for fetch, writeback, or flush writeback
   mux3 #(PA_BITS) CacheBusAdrMux(.d0({PAdr[PA_BITS-1:OFFSETLEN], {OFFSETLEN{1'b0}}}),

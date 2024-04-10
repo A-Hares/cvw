@@ -71,6 +71,7 @@ typedef struct packed {
   logic         BUS_SUPPORTED;
   logic         DCACHE_SUPPORTED;
   logic         ICACHE_SUPPORTED;
+  logic         FETCHBUFFER_SUPPORTED;
 
 // TLB configuration.  Entries should be a power of 2
   int           ITLB_ENTRIES;
