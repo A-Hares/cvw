@@ -313,6 +313,7 @@ module lsu import cvw::*;  #(parameter cvw_t P) (
       logic                    BusCMOZero;
       logic [3:0]              CacheCMOpM;
       logic                    BusAtomic;
+      logic [P.DCACHE_LINELENINBITS-1:0]  ReadDataLine;
 
       if(P.ZICBOZ_SUPPORTED) begin 
         assign BusCMOZero = CMOpM[3] & ~CacheableM;
@@ -331,7 +332,7 @@ module lsu import cvw::*;  #(parameter cvw_t P) (
       cache #(.P(P), .PA_BITS(P.PA_BITS), .XLEN(P.XLEN), .LINELEN(P.DCACHE_LINELENINBITS), .NUMLINES(P.DCACHE_WAYSIZEINBYTES*8/LINELEN),
               .NUMWAYS(P.DCACHE_NUMWAYS), .LOGBWPL(LLENLOGBWPL), .WORDLEN(CACHEWORDLEN), .MUXINTERVAL(P.LLEN), .READ_ONLY_CACHE(0)) dcache(
         .clk, .reset, .Stall(GatedStallW & ~SelSpillE), .SelBusBeat, .FlushStage(FlushW | IgnoreRequestTLB),
-        .CacheRW(CacheRWM), 
+        .CacheRW(CacheRWM), .ReadDataLine,
         .FlushCache(FlushDCache), .NextSet(IEUAdrExtE[11:0]), .PAdr(PAdrM), 
         .ByteMask(ByteMaskSpillM), .BeatCount(BeatCount[AHBWLOGBWPL-1:AHBWLOGBWPL-LLENLOGBWPL]),
         .CacheWriteData(LSUWriteDataSpillM), .SelHPTW,

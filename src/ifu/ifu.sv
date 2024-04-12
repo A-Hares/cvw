@@ -143,9 +143,9 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
   logic [P.PA_BITS-1 : 0]      PCPF_muxed;
   logic [LINELEN-1:0]          ReadDataLineCache;
   logic [31:0]                 InstrRawSpill;
-
+  logic                        PAdr_mux;
   assign PCFExt = {2'b00, PCSpillF};
-
+  
   /////////////////////////////////////////////////////////////////////////////////////////////
   // Spill Support
   /////////////////////////////////////////////////////////////////////////////////////////////
@@ -154,11 +154,12 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
     flopenl #(32) AlignedInstrRawDFlop(clk, reset | FlushD, ~StallD, PostSpillInstrRawF, nop, InstrRawD);
     assign PCPF_muxed = PCPF;
     assign InstrRawSpill = InstrRawF;
+    assign PAdr_mux = 0;
   end
   else begin
     logic [LINELEN-1:0]     ReadDataLineOut;
     logic [P.PA_BITS-1 : 0] PAdr_out;
-    logic                   PAdr_mux;
+    
     
     
     assign InstrRawSpill = InstrD;
@@ -166,7 +167,8 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
     mux2 #(P.PA_BITS) PAdrmux(.d0(PCPF) , .d1(PAdr_out), .s(PAdr_mux), .y(PCPF_muxed));
   
     FetchBuffer #(.P(P) ,.PA_BITS(P.PA_BITS), .LINELEN(P.ICACHE_LINELENINBITS), .WORDLEN(32), .MUXINTERVAL(16)) FB_inst(
-      .clk , .reset , .ReadDataLine(ReadDataLineCache) , .PAdr(PCPF), .Stall(GatedStallD) , .FlushStage(FlushD) , .PAdr_out , .PAdr_mux , .ReadDataWord(InstrRawD)
+      .clk , .reset , .ReadDataLine(ReadDataLineCache) , .PAdr(PCPF), .Stall(StallD) , 
+      .FlushStage(FlushD) , .PAdr_out , .PAdr_mux , .ReadDataWord(InstrRawD)
     );
 
   end
@@ -260,7 +262,7 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
       
       
       assign BusRW = ~ITLBMissF & ~CacheableF & ~SelIROM ? IFURWF : 0;
-      assign CacheRWF = ~ITLBMissF & CacheableF & ~SelIROM ? IFURWF : 0;
+      assign CacheRWF = (~ITLBMissF & CacheableF & ~SelIROM ? IFURWF : 0) | (P.FETCHBUFFER_SUPPORTED ? {PAdr_mux, 1'b0} : 0);
       // *** RT: PAdr and NextSet are replaced with mux between PCPF/IEUAdrM and PCSpillNextF/IEUAdrE.
       cache #(.P(P), .PA_BITS(P.PA_BITS), .XLEN(P.XLEN), .LINELEN(P.ICACHE_LINELENINBITS),
               .NUMLINES(P.ICACHE_WAYSIZEINBYTES*8/P.ICACHE_LINELENINBITS),

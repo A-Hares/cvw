@@ -78,7 +78,7 @@ module spill import cvw::*;  #(parameter cvw_t P) (
   // Detect spill
   ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  if (P.ICACHE_SUPPORTED & ~P.FETCHBUFFER_SUPPORTED) begin
+  if (P.ICACHE_SUPPORTED) begin
     logic SpillCachedF, SpillUncachedF;
     assign SpillCachedF = &PCF[$clog2(P.ICACHE_LINELENINBITS/32)+1:1];
     assign SpillUncachedF = PCF[1]; 
@@ -86,7 +86,7 @@ module spill import cvw::*;  #(parameter cvw_t P) (
   end else
     assign SpillF = PCF[1];
   // Don't take the spill if there is a stall, TLB miss, or hardware update to the D/A bits
-  assign TakeSpillF = SpillF & ~EarlyCompressedF & ~IFUCacheBusStallF & ~(ITLBMissF | (P.SVADU_SUPPORTED & InstrUpdateDAF));
+  assign TakeSpillF = (SpillF & ~EarlyCompressedF & ~IFUCacheBusStallF & ~(ITLBMissF | (P.SVADU_SUPPORTED & InstrUpdateDAF))) & ~P.FETCHBUFFER_SUPPORTED;
   
   always_ff @(posedge clk)
     if (reset | FlushD)    CurrState <= STATE_READY;

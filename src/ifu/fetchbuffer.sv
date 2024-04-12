@@ -35,161 +35,158 @@
 module FetchBuffer import cvw::*; 
     #(  parameter cvw_t P,
         parameter PA_BITS, LINELEN, WORDLEN, MUXINTERVAL) 
-    (
-        input   logic                   clk,
-        input   logic                   reset,
-        input   logic   [LINELEN-1:0]   ReadDataLine,
-        input   logic   [PA_BITS-1:0]   PAdr,  
-        input   logic                   CacheStall,  
-        input   logic                   Stall,             // Stall the cache, preventing new accesses. In-flight access finished but does not return to READY
-        input   logic                   FlushStage,        // Pipeline flush of second stage (prevent writes and bus operations)
-        output  logic   [PA_BITS-1:0]   PAdr_out,  
-        output  logic                   PAdr_mux,
-        output  logic   [WORDLEN-1:0]   ReadDataWord    
-    );
-
-
-    // Line parameters
-    localparam                     WORDSPERLINE = LINELEN/MUXINTERVAL;
-
-    // Fetch buffer registers
-    logic   [LINELEN-1:0]       Line1       ,   Line2   ;
-    logic                       Line1_Valid ,   Line2_Valid;
-    logic   [PA_BITS-1:0]       Line1_PAdr  ,   Line2_PAdr;
-    logic                       Line1_en    ,   Line2_en;
-
-    // Control Signals
-    logic                       ActiveLine;                             // (0) Line1 is active, (1) Line2 is active.
-    logic                       Write_en;
-    logic                       LastHW;
-    logic   [4:0]               ActiveLineCount;
-    logic                       NextLineFetched;
-    logic   [1:0]               LineExists;
-
-    // Intermediate data
-    logic   [LINELEN-1:0]       SelectedLine;                           // The line currently being read from
-    logic   [MUXINTERVAL-1:0]   ExtraHW;                                // Extra Half word at the beginning of the next line
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    // Word Selection and Spill Correction
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-
-    logic [LINELEN+(WORDLEN-MUXINTERVAL)-1:0]   ReadDataLinePad;
-    logic [WORDLEN-1:0]                         ReadDataLineSets [(LINELEN/MUXINTERVAL)-1:0];
-
-    assign ActiveLineCount = ActiveLine ? Line2_PAdr[5:1] : Line1_PAdr[5:1];
-    assign LastHW       = & ActiveLineCount;
-    // Decide which line last half-word (of Non Active Line) is forwarded to be padded with Selected Line (Active Line)
-    assign ExtraHW      = (ActiveLine & LastHW) ? Line2[LINELEN-1:LINELEN-MUXINTERVAL] : Line1[LINELEN-1:LINELEN-MUXINTERVAL]; 
-
-    // Selects the active line and pads it with the Extra Half word
-    assign SelectedLine = ActiveLine ? Line2 : Line1;
-    assign ReadDataLinePad = {ExtraHW, SelectedLine};
-
+        (
+            input   logic                   clk,
+            input   logic                   reset,
+            input   logic   [LINELEN-1:0]   ReadDataLine,
+            input   logic   [PA_BITS-1:0]   PAdr,  
+            input   logic                   Stall,             // Stall the cache, preventing new accesses. In-flight access finished but does not return to READY
+            input   logic                   FlushStage,        // Pipeline flush of second stage (prevent writes and bus operations)
+            output  logic   [PA_BITS-1:0]   PAdr_out,  
+            output  logic                   PAdr_mux,
+            output  logic   [WORDLEN-1:0]   ReadDataWord    
+        );
     
-
-    genvar index;
-    for (index = 0; index < WORDSPERLINE; index++) begin :readdatalinesetsmux
-        assign ReadDataLineSets[index] = ReadDataLinePad[(index*MUXINTERVAL)+WORDLEN-1 : (index*MUXINTERVAL)];
-    end
-
-    assign ReadDataWord = ReadDataLineSets[ActiveLineCount];
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    // State and Data Registers
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-
-    typedef enum logic [2:0]{STATE_LOAD, STATE_READ} statetype;
-    statetype Current_State, NextState;
-
-    always_ff @(posedge clk)
-        if (reset | FlushStage)    Current_State <= STATE_LOAD;
-        else Current_State <= NextState; 
     
-    always_ff @(posedge clk) begin
-        if (reset | FlushStage) begin 
-            {Line1_Valid, Line1_PAdr, Line1} = 0;
-            {Line2_Valid, Line2_PAdr, Line2} = 0;
+        // Line parameters
+        localparam [31:0]              nop = 32'h00000013;                       // instruction for NOP
+        localparam                     WORDSPERLINE = LINELEN/MUXINTERVAL;
+        
+        // Fetch buffer registers
+        logic   [LINELEN-1:0]       Line1       ,   Line2   ;
+        logic                       Line1_Valid ,   Line2_Valid;
+        logic   [PA_BITS-1:0]       Line1_PAdr  ,   Line2_PAdr;
+        logic                       Line1_en    ,   Line2_en;
+    
+        // Control Signals
+        logic                       ActiveLine;                             // (0) Line1 is active, (1) Line2 is active.
+        logic                       LastW, LastHW;
+        logic   [4:0]               ActiveLineCount;
+        logic                       NextLineFetched;
+        logic   [1:0]               LineExists;
+    
+        // Intermediate data
+        logic   [LINELEN-1:0]       SelectedLine;                           // The line currently being read from
+        logic   [MUXINTERVAL-1:0]   ExtraHW;                                // Extra Half word at the beginning of the next line
+        logic   [PA_BITS-1:0]       PAdr_out_reg;
+    
+        ////////////////////////////////////////////////////////////////////////////////////////////////
+        // Word Selection and Spill Correction
+        ////////////////////////////////////////////////////////////////////////////////////////////////
+    
+        logic [LINELEN+(WORDLEN-MUXINTERVAL)-1:0]   ReadDataLinePad;
+        logic [WORDLEN-1:0]                         ReadDataLineSets [(LINELEN/MUXINTERVAL)-1:0];
+    
+        assign ActiveLineCount = ActiveLine ? Line2_PAdr[5:1] : Line1_PAdr[5:1];
+        assign LastHW       = & ActiveLineCount;
+        assign LastW        = & ActiveLineCount[4:1];
+        // Decide which line last half-word (of Non Active Line) is forwarded to be padded with Selected Line (Active Line)
+        assign ExtraHW      = (ActiveLine & LastHW) ? Line2[LINELEN-1:LINELEN-MUXINTERVAL] : Line1[LINELEN-1:LINELEN-MUXINTERVAL]; 
+    
+        // Selects the active line and pads it with the Extra Half word
+        assign SelectedLine = ActiveLine ? Line2 : Line1;
+        assign ReadDataLinePad = {ExtraHW, SelectedLine};
+    
+        genvar index;
+        for (index = 0; index < WORDSPERLINE; index++) begin :readdatalinesetsmux
+            assign ReadDataLineSets[index] = ReadDataLinePad[(index*MUXINTERVAL)+WORDLEN-1 : (index*MUXINTERVAL)];
         end
-        else begin
-            if (~Stall) begin
-                if      (Line1_en)     {Line1_Valid, Line1_PAdr, Line1} <= {1'b1, PAdr, ReadDataLine};
-                else if (Line2_en)     {Line2_Valid, Line2_PAdr, Line2} <= {1'b1, PAdr, ReadDataLine};
-                else
-                    if      (~ActiveLine)     Line1_PAdr <= PAdr;
-                    else if (ActiveLine)      Line2_PAdr <= PAdr;
-                
-                
+    
+        assign ReadDataWord = ReadDataLineSets[ActiveLineCount];
+    
+        ////////////////////////////////////////////////////////////////////////////////////////////////
+        // State and Data Registers
+        ////////////////////////////////////////////////////////////////////////////////////////////////
+    
+        typedef enum logic [2:0]{STATE_LOAD, STATE_READ} statetype;
+        statetype Current_State, NextState;
+    
+        always_ff @(posedge clk)
+            if (reset | FlushStage)     Current_State <= STATE_LOAD;
+            else                        Current_State <= NextState; 
+        
+        always_ff @(posedge clk) begin
+            if (reset | FlushStage) begin 
+                {Line1_Valid, Line1_PAdr, Line1} = nop;
+                {Line2_Valid, Line2_PAdr, Line2} = nop;
+            end
+            else begin
+                if      (~ActiveLine )  begin  
+                    if (~LastHW & ~LastW) Line1_PAdr <= PAdr;      
+                    if      (Line1_en)     {Line1_Valid, Line1_PAdr, Line1} <= {1'b1, PAdr, ReadDataLine};
+                    else if (Line2_en)     {Line2_Valid, Line2_PAdr, Line2} <= {1'b1, PAdr_out, ReadDataLine};
+                end
+                else if (ActiveLine     & LineExists[1])  begin      
+                    Line2_PAdr <= PAdr;  
+                    if      (Line1_en)     {Line1_Valid, Line1_PAdr, Line1} <= {1'b1, PAdr_out, ReadDataLine};
+                end              
             end
         end
-    end
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    // Next State Logic
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-
-    always_comb begin
-        NextState = STATE_LOAD;
-        Line1_en = 0;
-        Line2_en = 0;
-        case (Current_State)                                                                                        
-            STATE_LOAD: begin  
-                            Line1_en = 1;
-                            if (~Stall) begin NextState = STATE_READ; end
-                        end
-            STATE_READ: begin
-                            NextState = STATE_READ;
-                            if (~Stall) begin   
-                                if (PAdr_mux) begin
-                                    
+    
+        ////////////////////////////////////////////////////////////////////////////////////////////////
+        // Next State Logic
+        ////////////////////////////////////////////////////////////////////////////////////////////////
+    
+        always_comb begin
+            NextState = STATE_LOAD;
+            Line1_en = 0;
+            Line2_en = 0;
+            case (Current_State)                                                                                        
+                STATE_LOAD: begin  
+                                if (~Stall) begin NextState = STATE_READ; Line1_en = 1; end
+                            end
+                STATE_READ: begin
+                                NextState = STATE_READ;
+                                if (NextLineFetched) begin
                                     if(~ActiveLine) begin Line2_en = 1;     end
                                     else            begin Line1_en = 1;     end
-                                end     
+                                end
+                                if (LineExists == 0) NextState = STATE_LOAD;     
                             end
-                        end
-            default:    NextState = STATE_LOAD;
-        endcase
+                default:    NextState = STATE_LOAD;
+            endcase
         end
-
-    always_ff @(posedge clk) begin
-        if (reset | FlushStage) begin ActiveLine <= 0; end
-        else if (LastHW) begin
-            if      (LineExists[0])     ActiveLine <= 0;
-            else if (LineExists[1])     ActiveLine <= 1;
+    
+        // ActiveLine register
+        always_ff @(posedge clk) begin
+            if (reset | FlushStage) begin       ActiveLine <= 0; end
+            else if         (LineExists[0])     ActiveLine <= 0;
+            else if         (LineExists[1])     ActiveLine <= 1;
         end
-    end
-
-    always_ff @(posedge clk) begin
-        if (reset | FlushStage) begin NextLineFetched <= 0; end
-        else begin 
-        if (PAdr_mux)
-            NextLineFetched <= 1;
-        if (LastHW)
-            NextLineFetched <= 0;
+    
+        // NextLineFetched Register
+        always_ff @(posedge clk) begin
+            if (reset | FlushStage) begin NextLineFetched <= 0; end
+            else begin 
+                if (PAdr_mux)           NextLineFetched <= 1;
+                if (LastHW | LastW)     NextLineFetched <= 0;
+            end
         end
-    end
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    // Next-Line Fetch Logic
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-
-    assign PAdr_out = (ActiveLine ? Line2_PAdr : Line1_PAdr) + (PAdr_mux ? 2**6 : 0);
-
-    always_comb begin
-        LineExists = 0;
-        if      (   (PAdr[55:6] == Line1_PAdr[55:6] )   && Line1_Valid)
-            LineExists[0] = 1;
-        else if (   (PAdr[55:6] == Line2_PAdr[55:6] )   && Line2_Valid)
-            LineExists[1] = 1;        
-    end
-
-    always_comb begin
-        PAdr_mux = 0;
-        if ( (| LineExists == 1) && (ActiveLineCount > 2**4 - 1) && ~NextLineFetched) begin
-            PAdr_mux = 1;
+    
+        ////////////////////////////////////////////////////////////////////////////////////////////////
+        // Next-Line Fetch Logic
+        ////////////////////////////////////////////////////////////////////////////////////////////////
+    
+        assign PAdr_out_reg = PAdr  + ((ActiveLineCount == 2**4) ? 2**5 : 0);
+    
+        // LineExist Logic
+        always_comb begin
+            LineExists = 0;
+            if      (   (PAdr[55:6] == Line1_PAdr[55:6] )   && Line1_Valid)     LineExists[0] = 1;
+            else if (   (PAdr[55:6] == Line2_PAdr[55:6] )   && Line2_Valid)     LineExists[1] = 1;
         end
-    end
-
+    
+        // PAdr out and mux register
+        always_ff @(posedge clk) begin
+            if (reset | FlushStage) begin PAdr_out <= 0; PAdr_mux <= 0; end
+            else begin 
+                if (ActiveLineCount == 2**4)    begin  PAdr_mux <= 1;   PAdr_out <= PAdr_out_reg; end   
+                else if (Stall & PAdr_mux)      begin  PAdr_mux <= 1;  end              
+                else if (LastHW | LastW)        begin  PAdr_mux <= 0;  end
+    
+            end
+        end
+    
 
 endmodule
 
