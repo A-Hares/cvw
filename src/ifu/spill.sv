@@ -68,6 +68,7 @@ module spill import cvw::*;  #(parameter cvw_t P) (
   mux2 #(P.XLEN) pcplus2mux(.d0({PCF[P.XLEN-1:2], 2'b10}), .d1({PCPlus4F, 2'b00}), .s(PCF[1]), .y(PCPlus2NextF));
   // select between PCNextF and PCF+2
   mux2 #(P.XLEN) pcnextspillmux(.d0(PCNextF), .d1(PCPlus2NextF), .s(SelSpillNextF & ~FlushD), .y(PCSpillNextF));
+
   // select between PCF and PCF+2
   // not required for functional correctness, but improves critical path.  pcspillf ends up on the hptw's ihadr 
   // and into the dmmu.  Cutting the path here removes the PC+4 adder.

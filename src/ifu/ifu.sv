@@ -108,7 +108,7 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
   logic [P.XLEN-1:0]           UnalignedPCNextF;                         // The next PCF, but not aligned to 2 bytes. 
   logic                        BranchMisalignedFaultE;                   // Branch target not aligned to 4 bytes if no compressed allowed (2 bytes if allowed)
   logic [P.XLEN-1:0]           PCPlus2or4F;                              // PCF + 2 (CompressedF) or PCF + 4 (Non-compressed)
-  logic [P.XLEN-1:0]           PCSpillNextF;                             // Next PCF after possible + 2 to handle spill
+  logic [P.XLEN-1:0]           PCSpillNextF,PCSpillNextF_FB;             // Next PCF after possible + 2 to handle spill
   logic [P.XLEN-1:2]           PCPlus4F;                                 // PCPlus4F is always PCF + 4.  Fancy way to compute PCPlus2or4F
   logic [P.XLEN-1:0]           PCD;                                      // Decode stage instruction address
   logic [P.XLEN-1:0]           NextValidPCE;                             // The PC of the next valid instruction in the pipeline after  csr write or fence
@@ -144,6 +144,7 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
   logic [LINELEN-1:0]          ReadDataLineCache;
   logic [31:0]                 InstrRawSpill;
   logic                        PAdr_mux;
+  logic                        StallFB;
   assign PCFExt = {2'b00, PCSpillF};
   
   /////////////////////////////////////////////////////////////////////////////////////////////
@@ -155,21 +156,20 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
     assign PCPF_muxed = PCPF;
     assign InstrRawSpill = InstrRawF;
     assign PAdr_mux = 0;
+    assign PCSpillNextF_FB = PCSpillNextF;
   end
   else begin
-    logic [LINELEN-1:0]     ReadDataLineOut;
     logic [P.PA_BITS-1 : 0] PAdr_out;
     
-    
+    assign PCSpillNextF_FB = PAdr_mux ? PCSpillNextF + 2**5 : PCSpillNextF;
     
     assign InstrRawSpill = InstrD;
-    //mux2 #(LINELEN) linemux(.d0(ReadDataLineCache) , .d1(FetchBuffer), .s(~CacheableF), .y(ReadDataLineOut));
+
     mux2 #(P.PA_BITS) PAdrmux(.d0(PCPF) , .d1(PAdr_out), .s(PAdr_mux), .y(PCPF_muxed));
   
     FetchBuffer #(.P(P) ,.PA_BITS(P.PA_BITS), .LINELEN(P.ICACHE_LINELENINBITS), .WORDLEN(32), .MUXINTERVAL(16)) FB_inst(
-      .clk , .reset , .ReadDataLine(ReadDataLineCache) , .PAdr(PCPF), .Stall(StallD) , 
-      .FlushStage(FlushD) , .PAdr_out , .PAdr_mux , .ReadDataWord(InstrRawD)
-    );
+      .clk , .reset , .ReadDataLine(ReadDataLineCache) , .PAdr(PCPF), .Stall(StallD) , .CacheStall(IFUCacheBusStallF),
+      .FlushStage(FlushD) , .PAdr_out , .PAdr_mux ,.PCD ,.ReadDataWord(InstrRawD), .StallFB);
 
   end
 
@@ -278,7 +278,7 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
              .CacheWriteData('0),
              .CacheRW(CacheRWF),
              .FlushCache('0),
-             .NextSet(PCSpillNextF[11:0]),
+             .NextSet(PCSpillNextF_FB[11:0]),
              .PAdr(PCPF_muxed),
              .CacheCommitted(CacheCommittedF), .InvalidateCache(InvalidateICacheM), .CMOpM('0),
              .ReadDataLine(ReadDataLineCache)); 
@@ -326,7 +326,7 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
   else mux2 #(32) UncachedShiftInstrMux(FetchBuffer[32-1:0], {16'b0, FetchBuffer[32-1:16]}, PCSpillF[1], ShiftUncachedInstr);
   
   assign IFUCacheBusStallF = ICacheStallF | BusStall;
-  assign IFUStallF = IFUCacheBusStallF | SelSpillNextF;
+  assign IFUStallF =  ( (~P.FETCHBUFFER_SUPPORTED) ? IFUCacheBusStallF : StallFB )| SelSpillNextF;
   assign GatedStallD = StallD & ~SelSpillNextF;
   
   ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -360,7 +360,7 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
   ////////////////////////////////////////////////////////////////////////////////////////////////
   // Branch and Jump Predictor
   ////////////////////////////////////////////////////////////////////////////////////////////////
-  if (P.BPRED_SUPPORTED) begin : bpred
+  if (~P.BPRED_SUPPORTED) begin : bpred
     bpred #(P) bpred(.clk, .reset,
                 .StallF, .StallD, .StallE, .StallM, .StallW,
                 .FlushD, .FlushE, .FlushM, .FlushW, .InstrValidD, .InstrValidE, 
@@ -395,7 +395,7 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
   
   // Decode stage pipeline register and logic
   flopenrc #(P.XLEN) PCDReg(clk, reset, FlushD, ~StallD, PCF, PCD);
-   
+  
   // expand 16-bit compressed instructions to 32 bits
   if (P.COMPRESSED_SUPPORTED) begin: decomp
     logic IllegalCompInstrD;

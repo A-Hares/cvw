@@ -74,6 +74,7 @@ add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/Fl
 add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/Stall
 add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/reset
 add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/LastHW
+add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/LastW
 add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/ActiveLineCount
 add wave -noupdate -group {PCNext Generation} /testbench/dut/core/ifu/PCPlus2or4F
 add wave -noupdate -group {PCNext Generation} /testbench/dut/core/ifu/IEUAdrE
@@ -136,6 +137,8 @@ add wave -noupdate -group ifu -group icache /testbench/dut/core/ifu/bus/icache/i
 add wave -noupdate -group ifu -group icache /testbench/dut/core/ifu/bus/icache/icache/CacheRW
 add wave -noupdate -group ifu -group icache /testbench/dut/core/ifu/bus/icache/icache/Stall
 add wave -noupdate -group ifu -group icache /testbench/dut/core/ifu/bus/icache/icache/CacheAccess
+add wave -noupdate -group ifu -group icache /testbench/dut/core/ifu/bus/icache/icache/FetchBuffer
+add wave -noupdate -group ifu -group icache /testbench/dut/core/ifu/bus/icache/icache/SelFetchBuffer
 add wave -noupdate -group ifu -group icache -expand -group {fsm out and control} /testbench/dut/core/ifu/bus/icache/icache/HitWay
 add wave -noupdate -group ifu -group icache -expand -group {fsm out and control} /testbench/dut/core/ifu/ICacheStallF
 add wave -noupdate -group ifu -group icache -expand -group memory /testbench/dut/core/ifu/bus/icache/icache/CacheBusAdr
