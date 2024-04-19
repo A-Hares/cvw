@@ -144,7 +144,7 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
   logic [LINELEN-1:0]          ReadDataLineCache;
   logic [31:0]                 InstrRawSpill;
   logic                        PAdr_mux;
-  logic                        StallFB;
+  logic                        StallC;
   assign PCFExt = {2'b00, PCSpillF};
   
   /////////////////////////////////////////////////////////////////////////////////////////////
@@ -160,20 +160,25 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
   end
   else begin
     logic [P.PA_BITS-1 : 0] PAdr_out;
+    logic [31:0] ReadDataWordNext;
     
-    assign PCSpillNextF_FB = PAdr_mux ? PCSpillNextF + 2**5 : PCSpillNextF;
+    assign PCSpillNextF_FB =  {{PCSpillNextF[P.XLEN-1:6]}, {6{1'b0}}}  + (PAdr_mux ? {1'b1 , {6{1'b0}}} : 0);
+    //PAdr_mux ? PCSpillNextF + 2**6 : PCSpillNextF;
     
-    assign InstrRawSpill = InstrD;
+    //assign InstrRawSpill = InstrD;
+    //flopenl #(32) AlignedInstrRawDFlop(clk, reset | FlushD, ~StallD | ~StallE, ReadDataWordNext, nop, InstrRawSpill);
+    mux2    #(32) FlushInstrFMux(ReadDataWordNext, nop, reset | FlushD, InstrRawSpill);
 
     mux2 #(P.PA_BITS) PAdrmux(.d0(PCPF) , .d1(PAdr_out), .s(PAdr_mux), .y(PCPF_muxed));
   
     FetchBuffer #(.P(P) ,.PA_BITS(P.PA_BITS), .LINELEN(P.ICACHE_LINELENINBITS), .WORDLEN(32), .MUXINTERVAL(16)) FB_inst(
       .clk , .reset , .ReadDataLine(ReadDataLineCache) , .PAdr(PCPF), .Stall(StallD) , .CacheStall(IFUCacheBusStallF),
-      .FlushStage(FlushD) , .PAdr_out , .PAdr_mux ,.PCD ,.ReadDataWord(InstrRawD), .StallFB);
+      .FlushStage(FlushD) , .PAdr_out , .PAdr_mux , .PCD , .PCF ,
+      .ReadDataWord(InstrRawD), .ReadDataWordNext, .StallC, .BPWrongE, .BranchE, .JumpE);
 
   end
 
-  if(P.COMPRESSED_SUPPORTED) begin : Spill
+  if(~P.COMPRESSED_SUPPORTED) begin : Spill
     spill #(P) spill(.clk, .reset, .StallD, .FlushD, .PCF, .PCPlus4F, .PCNextF, .InstrRawF(InstrRawSpill), .InstrUpdateDAF, .CacheableF, 
       .IFUCacheBusStallF, .ITLBMissF, .PCSpillNextF, .PCSpillF, .SelSpillNextF, .PostSpillInstrRawF, .CompressedF);
   end else begin : NoSpill
@@ -187,7 +192,7 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
   // Memory management
   ////////////////////////////////////////////////////////////////////////////////////////////////
 
-  if(P.ZICSR_SUPPORTED == 1) begin : immu
+  if(~P.ZICSR_SUPPORTED == 1) begin : immu
     ///////////////////////////////////////////
     // sfence.vma causes TLB flushes
     ///////////////////////////////////////////
@@ -326,7 +331,7 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
   else mux2 #(32) UncachedShiftInstrMux(FetchBuffer[32-1:0], {16'b0, FetchBuffer[32-1:16]}, PCSpillF[1], ShiftUncachedInstr);
   
   assign IFUCacheBusStallF = ICacheStallF | BusStall;
-  assign IFUStallF =  ( (~P.FETCHBUFFER_SUPPORTED) ? IFUCacheBusStallF : StallFB )| SelSpillNextF;
+  assign IFUStallF =  ( (~P.FETCHBUFFER_SUPPORTED) ? IFUCacheBusStallF : StallC )| SelSpillNextF;
   assign GatedStallD = StallD & ~SelSpillNextF;
   
   ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -397,7 +402,7 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
   flopenrc #(P.XLEN) PCDReg(clk, reset, FlushD, ~StallD, PCF, PCD);
   
   // expand 16-bit compressed instructions to 32 bits
-  if (P.COMPRESSED_SUPPORTED) begin: decomp
+  if (~P.COMPRESSED_SUPPORTED) begin: decomp
     logic IllegalCompInstrD;
     decompress #(P) decomp(.InstrRawD, .InstrD, .IllegalCompInstrD); 
     assign IllegalIEUInstrD = IllegalBaseInstrD | IllegalCompInstrD; // illegal if bad 32 or 16-bit instr

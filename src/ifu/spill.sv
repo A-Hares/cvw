@@ -110,13 +110,15 @@ module spill import cvw::*;  #(parameter cvw_t P) (
   ////////////////////////////////////////////////////////////////////////////////////////////////////
   // Merge spilled instruction
   ////////////////////////////////////////////////////////////////////////////////////////////////////
+  if (P.FETCHBUFFER_SUPPORTED)
+    assign PostSpillInstrRawF = InstrRawF;
+  else begin
+    // save the first 2 bytes
+    flopenr #(16) SpillInstrReg(clk, reset, SpillSaveF, InstrRawF[15:0], InstrFirstHalfF);
 
-  // save the first 2 bytes
-  flopenr #(16) SpillInstrReg(clk, reset, SpillSaveF, InstrRawF[15:0], InstrFirstHalfF);
-
-  // merge together
-  mux2 #(32) postspillmux(InstrRawF, {InstrRawF[15:0], InstrFirstHalfF}, SelSpillF, PostSpillInstrRawF);
-
+    // merge together
+    mux2 #(32) postspillmux(InstrRawF, {InstrRawF[15:0], InstrFirstHalfF}, SelSpillF, PostSpillInstrRawF);
+  end
   // Need to use always comb to avoid pessimistic x propagation if PostSpillInstrRawF is x
   always_comb
   if (PostSpillInstrRawF[1:0] != 2'b11) CompressedF = 1'b1;

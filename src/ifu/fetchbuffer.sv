@@ -41,11 +41,12 @@ module FetchBuffer import cvw::*;
     input   logic   [LINELEN-1:0]   ReadDataLine,
     input   logic   [PA_BITS-1:0]   PAdr,
     input   logic   [P.XLEN-1:0]    PCD,
-    input   logic   [P.XLEN-1:0]    PCNextF,  
+    input   logic   [P.XLEN-1:0]    PCF,  
+    input   logic                   BPWrongE, BranchE, JumpE,
     input   logic                   Stall,             // Stall the cache, preventing new accesses. In-flight access finished but does not return to READY
     input   logic                   CacheStall,
     input   logic                   FlushStage,        // Pipeline flush of second stage (prevent writes and bus operations)
-    output  logic                   StallFB,
+    output  logic                   StallC,
     output  logic   [PA_BITS-1:0]   PAdr_out,  
     output  logic                   PAdr_mux,
     output  logic   [WORDLEN-1:0]   ReadDataWord,ReadDataWordNext    
@@ -64,7 +65,7 @@ module FetchBuffer import cvw::*;
 
     // Control Signals
     logic                       ActiveLine;                             // (0) Line1 is active, (1) Line2 is active.
-    logic                       MidW, LastW, LastHW;
+    logic                       SwitchLine, LastW, LastHW;
     logic   [4:0]               ActiveLineCount;
     logic   [1:0]               LineExists;
 
@@ -72,19 +73,31 @@ module FetchBuffer import cvw::*;
     logic   [LINELEN-1:0]       SelectedLine;                           // The line currently being read from
     logic   [MUXINTERVAL-1:0]   ExtraHW;                                // Extra Half word at the beginning of the next line
     logic   [PA_BITS-1:0]       PAdr_out_reg;
-    logic Stall2;
-    assign LastHW       = & ActiveLineCount;
-    assign LastW        = & ActiveLineCount[4:1];
-    assign MidW         = (ActiveLineCount == 2**4);
+    logic                       StallFB;
 
-    assign StallFB      =  CacheStall; //& (LineExists == 0);
+    // State Definition
+    typedef enum logic [2:0]{STATE_DECIDE, STATE_FETCH, STATE_READ, STATE_PREFETCH} statetype;
+    statetype Current_State, NextState;
     
-    always_ff @(posedge clk) begin
-        if (reset | FlushStage) Stall2 <= 0;
-        else 
-            if (LineExists == 0) Stall2 <= 1;
-    end
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+    // Next-Line Fetch Logic
+    ////////////////////////////////////////////////////////////////////////////////////////////////
 
+    assign PAdr_out_reg = {{PAdr[PA_BITS-1:6]}, {6{1'b0}}}  + (SwitchLine ? {1'b1 , {6{1'b0}}} : 0);
+
+    // LineExist Logic
+    always_comb begin
+        LineExists = 0;
+        if      (   (PAdr[PA_BITS-1:6] == Line1_PAdr[PA_BITS-1:6] )   && Line1_Valid)     LineExists[0] = 1;
+        else if (   (PAdr[PA_BITS-1:6] == Line2_PAdr[PA_BITS-1:6] )   && Line2_Valid)     LineExists[1] = 1;
+    end
+    
+    assign SwitchLine   = (ActiveLineCount == 2) ;
+    assign StallC       = CacheStall; 
+    assign StallFB      = StallC | Stall;
+    assign FlushFB      = FlushStage ;
+    assign FlushFB2     = FlushStage & ~BPWrongE;
+    
     ////////////////////////////////////////////////////////////////////////////////////////////////
     // Word Selection and Spill Correction
     ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -106,108 +119,121 @@ module FetchBuffer import cvw::*;
         assign ReadDataLineSets[index] = ReadDataLinePad[(index*MUXINTERVAL)+WORDLEN-1 : (index*MUXINTERVAL)];
     end
 
-    assign ReadDataWord = ReadDataLineSets[ActiveLineCount];
-    assign ReadDataWordNext = ReadDataLineSets[ActiveLineCount+2];
-
+    assign ReadDataWord = ReadDataLineSets[PCD[5:1]];
+    assign ReadDataWordNext = ReadDataLineSets[PCF[5:1]];
+    
     ////////////////////////////////////////////////////////////////////////////////////////////////
     // State and Data Registers
     ////////////////////////////////////////////////////////////////////////////////////////////////
 
-    typedef enum logic [2:0]{STATE_INVALID, STATE_READ, STATE_PREFETCH} statetype;
-    statetype Current_State, NextState;
-
+    
+    // State Registers
     always_ff @(posedge clk)
-        if (reset | FlushStage)     Current_State <= STATE_INVALID;
+        if (reset | FlushFB)        Current_State <= STATE_DECIDE;
         else                        Current_State <= NextState; 
     
+    // Line Data Registers
     always_ff @(posedge clk) begin
-        if (reset | FlushStage) begin 
-            {Line1_Valid, Line1_PAdr, Line1} = nop;
-            {Line2_Valid, Line2_PAdr, Line2} = nop;
+        if (reset | FlushFB) begin 
+            {Line1_Valid, Line1} = {{1'b0}, {16{nop}}};
+            {Line2_Valid, Line2} = {{1'b0}, {16{nop}}};
         end
         else begin    
-            if      (Line1_en)     {Line1_Valid, Line1} <= {1'b1,  ReadDataLine};
-            if      (Line2_en)     {Line2_Valid, Line2} <= {1'b1,  ReadDataLine};  
-
-            if (~ (StallFB | Stall)) begin
-                if (ActiveLine & MidW)
-                    Line1_PAdr <= PAdr_out_reg;
-                else if (LineExists[0] | (Line1_en & (Current_State == STATE_INVALID)))
-                    Line1_PAdr <= PAdr;
-                    
-                if (~ActiveLine & MidW)
-                    Line2_PAdr <= PAdr_out_reg;
-                else if (LineExists[1] | (Line2_en & (Current_State == STATE_INVALID)))
-                    Line2_PAdr <= PAdr;
-            end
+            if      (Line1_en)     {Line1_Valid, Line1} <= {{1'b1}, ReadDataLine};
+            if      (Line2_en)     {Line2_Valid, Line2} <= {{1'b1}, ReadDataLine};  
         end
     end
+
+    // Line Addresses Registers
+    always_ff @(posedge clk) begin
+        if (reset | FlushFB) begin 
+            Line1_PAdr = 0;
+            Line2_PAdr = 0;
+        end
+        else begin    
+            if (ActiveLine & SwitchLine)
+                Line1_PAdr <= PAdr_out_reg;
+            else if (~ StallFB & (LineExists[0] | (Line1_en & (Current_State == STATE_FETCH))))
+                Line1_PAdr <= PAdr;
+                
+            if (~ActiveLine & SwitchLine)
+                Line2_PAdr <= PAdr_out_reg;
+            else if (~ StallFB & (LineExists[1] | (Line2_en & (Current_State == STATE_FETCH))))
+                Line2_PAdr <= PAdr;
+        end
+    end
+
+    // ActiveLine Signal register
+    always_ff @(posedge clk) begin
+        if (reset | FlushFB) begin       ActiveLine <= 0; end
+        else if (~StallFB)
+            if          (LineExists[0])     ActiveLine <= 0;
+            else if     (LineExists[1])     ActiveLine <= 1;
+    end
+
+    // PAdr out register
+    always_ff @(posedge clk) begin
+        if (reset | FlushFB) begin PAdr_out <= 0; end
+        else begin 
+            if (SwitchLine) begin  
+                PAdr_out <= PAdr_out_reg; 
+            end   
+        end
+    end
+
 
     ////////////////////////////////////////////////////////////////////////////////////////////////
     // Next State Logic
     ////////////////////////////////////////////////////////////////////////////////////////////////
 
     always_comb begin
-        NextState = STATE_INVALID;
+        NextState = Current_State;
+        case (Current_State)     
+            STATE_DECIDE:   begin  
+                                if (LineExists == 0)    NextState = STATE_FETCH;
+                                else                    NextState = STATE_READ;
+                            end                                                                                   
+            STATE_FETCH:    begin  
+                                if (~StallFB & ~FlushFB) begin 
+                                    NextState = STATE_READ;
+                                end
+                            end
+            STATE_READ:     begin
+                                if (SwitchLine)         NextState = STATE_PREFETCH;
+                                if (LineExists == 0)    NextState = STATE_FETCH;     
+                            end
+            STATE_PREFETCH: begin
+                                if (~StallFB & (ActiveLineCount > 14))      NextState = STATE_READ;
+                                if (LineExists == 0)                        NextState = STATE_FETCH;
+                            end
+            default:    NextState = STATE_DECIDE;
+        endcase
+    end
+
+    always_comb begin
         Line1_en = 0;
         Line2_en = 0;
         PAdr_mux = 0;
-        case (Current_State)                                                                                        
-            STATE_INVALID:  begin  
-                                if (~(StallFB | Stall) & ~FlushStage) begin 
-                                    NextState = STATE_READ;
+        case (Current_State)
+            STATE_DECIDE:   begin
+
+                            end                                                                                        
+            STATE_FETCH:    begin  
+                                if (~StallFB & (LineExists == 0)) begin 
                                     Line1_en = 1; 
                                 end
                             end
             STATE_READ:     begin
-                                NextState = STATE_READ;
-                                if (MidW)               NextState = STATE_PREFETCH;
-                                if (LineExists == 0)    NextState = STATE_INVALID;     
+                                Line1_en = 0;
                             end
             STATE_PREFETCH: begin
-                                NextState = STATE_PREFETCH;
-                                if (~(StallFB | Stall) & (ActiveLineCount >= 0))         NextState = STATE_READ;
-                                
                                 PAdr_mux = 1;
-                                
                                 if (ActiveLine)     Line1_en = 1; 
                                 else                Line2_en = 1;
-
-                                if (LineExists == 0)    NextState = STATE_INVALID;
                             end
-            default:    NextState = STATE_INVALID;
         endcase
     end
 
-    // ActiveLine register
-    always_ff @(posedge clk) begin
-        if (reset | FlushStage) begin       ActiveLine <= 0; end
-        else if         (LineExists[0])     ActiveLine <= 0;
-        else if         (LineExists[1])     ActiveLine <= 1;
-    end
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    // Next-Line Fetch Logic
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-
-    assign PAdr_out_reg = PAdr  + (MidW ? 2**4 : 0);
-
-    // LineExist Logic
-    always_comb begin
-        LineExists = 0;
-        if      (   (PAdr[PA_BITS-1:6] == Line1_PAdr[PA_BITS-1:6] )   && Line1_Valid)     LineExists[0] = 1;
-        else if (   (PAdr[PA_BITS-1:6] == Line2_PAdr[PA_BITS-1:6] )   && Line2_Valid)     LineExists[1] = 1;
-    end
-
-    // PAdr out register
-    always_ff @(posedge clk) begin
-        if (reset | FlushStage) begin PAdr_out <= 0; end
-        else begin 
-            if (MidW) begin  
-                PAdr_out <= PAdr_out_reg; 
-            end   
-        end
-    end
 
 
 endmodule
