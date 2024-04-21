@@ -174,7 +174,7 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
     FetchBuffer #(.P(P) ,.PA_BITS(P.PA_BITS), .LINELEN(P.ICACHE_LINELENINBITS), .WORDLEN(32), .MUXINTERVAL(16)) FB_inst(
       .clk , .reset , .ReadDataLine(ReadDataLineCache) , .PAdr(PCPF), .Stall(StallD) , .CacheStall(IFUCacheBusStallF),
       .FlushStage(FlushD) , .PAdr_out , .PAdr_mux , .PCD , .PCF ,
-      .ReadDataWord(InstrRawD), .ReadDataWordNext, .StallC, .BPWrongE, .BranchE, .JumpE);
+      .ReadDataWord(InstrRawD), .ReadDataWordNext, .StallC, .BPWrongE, .BranchE, .JumpE , .ICacheMiss);
 
   end
 

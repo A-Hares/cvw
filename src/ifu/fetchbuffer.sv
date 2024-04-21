@@ -20,14 +20,14 @@
 //
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 //
-// Licensed under the Solderpad Hardware License v 2.1 (the “License”); you may not use this file 
+// Licensed under the Solderpad Hardware License v 2.1 (the "License"); you may not use this file 
 // except in compliance with the License, or, at your option, the Apache License version 2.0. You 
 // may obtain a copy of the License at
 //
 // https://solderpad.org/licenses/SHL-2.1/
 //
 // Unless required by applicable law or agreed to in writing, any work distributed under the 
-// License is distributed on an “AS IS” BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, 
+// License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, 
 // either express or implied. See the License for the specific language governing permissions 
 // and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -42,7 +42,7 @@ module FetchBuffer import cvw::*;
     input   logic   [PA_BITS-1:0]   PAdr,
     input   logic   [P.XLEN-1:0]    PCD,
     input   logic   [P.XLEN-1:0]    PCF,  
-    input   logic                   BPWrongE, BranchE, JumpE,
+    input   logic                   BPWrongE, BranchE, JumpE, ICacheMiss,
     input   logic                   Stall,             // Stall the cache, preventing new accesses. In-flight access finished but does not return to READY
     input   logic                   CacheStall,
     input   logic                   FlushStage,        // Pipeline flush of second stage (prevent writes and bus operations)
@@ -74,6 +74,7 @@ module FetchBuffer import cvw::*;
     logic   [MUXINTERVAL-1:0]   ExtraHW;                                // Extra Half word at the beginning of the next line
     logic   [PA_BITS-1:0]       PAdr_out_reg;
     logic                       StallFB;
+    logic                         FlushDD;
 
     // State Definition
     typedef enum logic [2:0]{STATE_DECIDE, STATE_FETCH, STATE_READ, STATE_PREFETCH} statetype;
@@ -92,7 +93,7 @@ module FetchBuffer import cvw::*;
         else if (   (PAdr[PA_BITS-1:6] == Line2_PAdr[PA_BITS-1:6] )   && Line2_Valid)     LineExists[1] = 1;
     end
     
-    assign SwitchLine   = (ActiveLineCount == 2) ;
+    assign SwitchLine   = 0;//(ActiveLineCount == 2) ;
     assign StallC       = CacheStall; 
     assign StallFB      = StallC | Stall;
     assign FlushFB      = FlushStage ;
@@ -119,7 +120,9 @@ module FetchBuffer import cvw::*;
         assign ReadDataLineSets[index] = ReadDataLinePad[(index*MUXINTERVAL)+WORDLEN-1 : (index*MUXINTERVAL)];
     end
 
-    assign ReadDataWord = ReadDataLineSets[PCD[5:1]];
+    //assign ReadDataWord = ReadDataLineSets[PCD[5:1]];
+    assign PCDzero = |PCD;
+    assign ReadDataWord = (FlushDD | ~PCDzero) ? nop : ReadDataLineSets[PCD[5:1]];
     assign ReadDataWordNext = ReadDataLineSets[PCF[5:1]];
     
     ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -129,12 +132,12 @@ module FetchBuffer import cvw::*;
     
     // State Registers
     always_ff @(posedge clk)
-        if (reset | FlushFB)        Current_State <= STATE_DECIDE;
+        if (reset)        Current_State <= STATE_DECIDE;
         else                        Current_State <= NextState; 
     
     // Line Data Registers
     always_ff @(posedge clk) begin
-        if (reset | FlushFB) begin 
+        if (reset) begin 
             {Line1_Valid, Line1} = {{1'b0}, {16{nop}}};
             {Line2_Valid, Line2} = {{1'b0}, {16{nop}}};
         end
@@ -146,14 +149,14 @@ module FetchBuffer import cvw::*;
 
     // Line Addresses Registers
     always_ff @(posedge clk) begin
-        if (reset | FlushFB) begin 
+        if (reset) begin 
             Line1_PAdr = 0;
             Line2_PAdr = 0;
         end
         else begin    
             if (ActiveLine & SwitchLine)
                 Line1_PAdr <= PAdr_out_reg;
-            else if (~ StallFB & (LineExists[0] | (Line1_en & (Current_State == STATE_FETCH))))
+            else if (~ StallFB & (LineExists[0] | (Line1_en )))
                 Line1_PAdr <= PAdr;
                 
             if (~ActiveLine & SwitchLine)
@@ -165,7 +168,7 @@ module FetchBuffer import cvw::*;
 
     // ActiveLine Signal register
     always_ff @(posedge clk) begin
-        if (reset | FlushFB) begin       ActiveLine <= 0; end
+        if (reset) begin       ActiveLine <= 0; end
         else if (~StallFB)
             if          (LineExists[0])     ActiveLine <= 0;
             else if     (LineExists[1])     ActiveLine <= 1;
@@ -173,7 +176,7 @@ module FetchBuffer import cvw::*;
 
     // PAdr out register
     always_ff @(posedge clk) begin
-        if (reset | FlushFB) begin PAdr_out <= 0; end
+        if (reset) begin PAdr_out <= 0; end
         else begin 
             if (SwitchLine) begin  
                 PAdr_out <= PAdr_out_reg; 
@@ -194,7 +197,7 @@ module FetchBuffer import cvw::*;
                                 else                    NextState = STATE_READ;
                             end                                                                                   
             STATE_FETCH:    begin  
-                                if (~StallFB & ~FlushFB) begin 
+                                if (~StallFB) begin 
                                     NextState = STATE_READ;
                                 end
                             end
@@ -225,6 +228,9 @@ module FetchBuffer import cvw::*;
                             end
             STATE_READ:     begin
                                 Line1_en = 0;
+                                if ((LineExists == 0) & ~ICacheMiss & ~StallFB) begin
+                                    Line1_en = 1;
+                                end
                             end
             STATE_PREFETCH: begin
                                 PAdr_mux = 1;
@@ -232,9 +238,9 @@ module FetchBuffer import cvw::*;
                                 else                Line2_en = 1;
                             end
         endcase
+        
     end
 
-
-
+    flop #(1) flushreg(clk, FlushStage, FlushDD);
+    //assign FlushDD = FlushStage;
 endmodule
-
