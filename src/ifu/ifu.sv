@@ -144,7 +144,7 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
   logic [LINELEN-1:0]          ReadDataLineCache;
   logic [31:0]                 InstrRawSpill;
   logic                        PAdr_mux;
-  logic                        StallC;
+  logic                        StallFB;
   assign PCFExt = {2'b00, PCSpillF};
   
   /////////////////////////////////////////////////////////////////////////////////////////////
@@ -172,9 +172,9 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
     mux2 #(P.PA_BITS) PAdrmux(.d0(PCPF) , .d1(PAdr_out), .s(PAdr_mux), .y(PCPF_muxed));
   
     FetchBuffer #(.P(P) ,.PA_BITS(P.PA_BITS), .LINELEN(P.ICACHE_LINELENINBITS), .WORDLEN(32), .MUXINTERVAL(16)) FB_inst(
-      .clk , .reset , .ReadDataLine(ReadDataLineCache) , .PAdr(PCPF), .Stall(StallD) , .CacheStall(IFUCacheBusStallF),
-      .FlushStage(FlushD) , .PAdr_out , .PAdr_mux , .PCD , .PCF ,
-      .ReadDataWord(InstrRawD), .ReadDataWordNext, .StallC, .BPWrongE, .BranchE, .JumpE , .ICacheMiss);
+      .clk , .reset , .ReadDataLine(ReadDataLineCache) , .PAdr(PCPF), .StallD(StallD) , .CacheStall(IFUCacheBusStallF),
+      .FlushD(FlushD) , .PAdr_out , .PAdr_mux , .PCD , .PCF ,
+      .ReadDataWord(InstrRawD), .ReadDataWordNext, .StallFB, .BPWrongE, .BranchE, .JumpE , .ICacheMiss);
 
   end
 
@@ -331,7 +331,7 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
   else mux2 #(32) UncachedShiftInstrMux(FetchBuffer[32-1:0], {16'b0, FetchBuffer[32-1:16]}, PCSpillF[1], ShiftUncachedInstr);
   
   assign IFUCacheBusStallF = ICacheStallF | BusStall;
-  assign IFUStallF =  ( (~P.FETCHBUFFER_SUPPORTED) ? IFUCacheBusStallF : StallC )| SelSpillNextF;
+  assign IFUStallF =  ( (~P.FETCHBUFFER_SUPPORTED) ? IFUCacheBusStallF : StallFB )| SelSpillNextF;
   assign GatedStallD = StallD & ~SelSpillNextF;
   
   ////////////////////////////////////////////////////////////////////////////////////////////////

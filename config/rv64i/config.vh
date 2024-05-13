@@ -59,6 +59,8 @@ localparam ICACHE_SUPPORTED = 0;
 localparam VIRTMEM_SUPPORTED = 0;
 localparam VECTORED_INTERRUPTS_SUPPORTED = 1;
 localparam BIGENDIAN_SUPPORTED = 0;
+localparam FETCHBUFFER_SUPPORTED = 0;
+
 
 // TLB configuration.  Entries should be a power of 2
 localparam ITLB_ENTRIES = 32'd0;

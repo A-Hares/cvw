@@ -53,31 +53,7 @@ add wave -noupdate -group PCS /testbench/dut/core/ifu/PCF
 add wave -noupdate -group PCS /testbench/dut/core/ifu/PCD
 add wave -noupdate -group PCS /testbench/dut/core/PCE
 add wave -noupdate -group PCS /testbench/dut/core/PCM
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/Line1
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/Line1_en
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/Line1_Valid
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/Line1_PAdr
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/Line2
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/Line2_en
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/Line2_Valid
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/Line2_PAdr
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/ActiveLine
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/PAdr_mux
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/PAdr_out
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/ReadDataLine
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/ReadDataWord
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/ReadDataWordNext
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/Current_State
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/LineExists
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/StallFB
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/PAdr
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/FlushStage
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/Stall
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/reset
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/LastHW
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/LastW
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/MidW
-add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/ActiveLineCount
+add wave -noupdate -group FetchBuffer /testbench/dut/core/ifu/genblk1/FB_inst/*
 add wave -noupdate -group {PCNext Generation} /testbench/dut/core/ifu/PCPlus2or4F
 add wave -noupdate -group {PCNext Generation} /testbench/dut/core/ifu/IEUAdrE
 add wave -noupdate -group {PCNext Generation} /testbench/dut/core/ifu/PCSrcE

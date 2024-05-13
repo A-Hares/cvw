@@ -7,6 +7,7 @@ localparam M_MODE  = (2'b11);
 localparam S_MODE  = (2'b01);
 localparam U_MODE  = (2'b00);
 
+
 // Virtual Memory Constants
 localparam VPN_SEGMENT_BITS = (XLEN == 32 ? 32'd10 : 32'd9);
 localparam VPN_BITS = (XLEN==32 ? (2*VPN_SEGMENT_BITS) : (4*VPN_SEGMENT_BITS));
